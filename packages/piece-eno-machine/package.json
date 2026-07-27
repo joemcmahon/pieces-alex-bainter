@@ -1,6 +1,6 @@
 {
   "name": "@generative-music/piece-eno-machine",
-  "version": "2.0.2",
+  "version": "5.2.0",
   "description": "",
   "main": "dist/cjs.js",
   "module": "dist/esm.js",
@@ -21,12 +21,15 @@
   },
   "homepage": "https://github.com/generative-music/piece-eno-machine#readme",
   "dependencies": {
-    "random-number": "0.0.9",
-    "tonal": "^2.0.0"
+    "@babel/runtime": "^7.12.5",
+    "@generative-music/utilities": "^5.2.0"
   },
   "peerDependencies": {
-    "@generative-music/samples.generative.fm": "^1.5.0",
-    "tone": "^13.4.9"
+    "tone": "^14.7.39"
   },
-  "gitHead": "8ed39368a8376ff9ea366fe8e1ab01820553a037"
+  "gitHead": "8ed39368a8376ff9ea366fe8e1ab01820553a037",
+  "devDependencies": {
+    "@babel/plugin-transform-runtime": "^7.12.1"
+  },
+  "unpkg": "dist/umd.min.js"
 }
