@@ -1,114 +1,109 @@
-import Tone from 'tone';
-import { Chord, Note } from 'tonal';
-import fetchSpecFile from '@generative-music/samples.generative.fm/browser-client';
+import * as Tone from 'tone';
+import {
+  createPrerenderableSampler,
+  wrapActivate,
+  toss,
+} from '@generative-music/utilities';
+import { sampleNames } from '../apoapsis.gfm.manifest.json';
+import gainAdjustments from '../../../normalize/gain.json';
 
-const makePiece = ({ audioContext, destination, preferredFormat }) =>
-  fetchSpecFile().then(({ samples }) => {
-    if (Tone.context !== audioContext) {
-      Tone.setContext(audioContext);
-    }
-    const noise = new Tone.Noise('brown');
-    const eq = new Tone.EQ3(-15, -Infinity, -Infinity).connect(destination);
-    eq.lowFrequency.value = Note.freq('C1');
-    const lfo = new Tone.LFO({
-      min: -50,
-      max: -15,
-      frequency: Math.random() / 100,
-      phase: 45,
-    });
-    lfo.connect(eq.low);
-    noise.connect(eq);
-    lfo.start();
+const pianoNotes = toss(['C', 'E', 'G', 'B'], [3, 4, 5]);
+const violinNotes = toss(['C', 'E', 'G', 'B'], [2, 3, 4]);
 
+const activate = async ({ sampleLibrary, onProgress }) => {
+  const samples = await sampleLibrary.request(Tone.context, sampleNames);
+
+  const getPianoDestination = () =>
+    Promise.resolve(
+      new Tone.Freeverb({ roomSize: 0.9, wet: 0.5 }).toDestination()
+    );
+  const getViolinDestination = () =>
+    Promise.resolve(
+      new Tone.Freeverb({ roomSize: 0.8, wet: 0.5 }).toDestination()
+    );
+
+  const reversePiano = await createPrerenderableSampler({
+    notes: pianoNotes,
+    samples,
+    sourceInstrumentName: 'vsco2-piano-mf',
+    renderedInstrumentName: 'apoapsis__vsco2-piano-mf',
+    sampleLibrary,
+    additionalRenderLength: 1,
+    getDestination: getPianoDestination,
+    onProgress: val => onProgress(val * 0.5),
+    reverse: true,
+  });
+
+  const violins = await createPrerenderableSampler({
+    notes: violinNotes,
+    samples,
+    sourceInstrumentName: 'vsco2-violins-susvib',
+    renderedInstrumentName: 'apoapsis__vsco2-violins-susvib',
+    sampleLibrary,
+    additionalRenderLength: 1,
+    getDestination: getViolinDestination,
+    onProgress: val => onProgress(val * 0.5 + 0.5),
+    bufferSourceOptions: {
+      fadeOut: 8,
+      curve: 'linear',
+    },
+  });
+
+  const violinVol = new Tone.Volume(-25);
+
+  violins.connect(violinVol);
+
+  const schedule = ({ destination }) => {
+    violinVol.connect(destination);
     const delay1 = new Tone.FeedbackDelay({
       feedback: 0.7,
       delayTime: 0.2,
       wet: 0.5,
     });
+    const delay2Time = window.generativeMusic.rng() * 10 + 20;
     const delay2 = new Tone.FeedbackDelay({
       feedback: 0.6,
-      delayTime: Math.random() * 10 + 20,
+      delayTime: delay2Time,
+      maxDelay: delay2Time,
       wet: 0.5,
     });
-    const reverb = new Tone.Freeverb({ roomSize: 0.9, wet: 0.5 });
-    reverb.chain(delay1, delay2, destination);
 
-    const violinReverb = new Tone.Freeverb({ roomSize: 0.8, wet: 0.5 });
-    const violins = new Tone.Sampler(
-      samples['vsco2-violins-susvib'][preferredFormat],
-      {
-        release: 8,
-        curve: 'linear',
-        onload: () => {
-          const notes = Chord.notes('C', 'maj7').reduce(
-            (allNotes, pc) =>
-              allNotes.concat([2, 3, 4].map(octave => `${pc}${octave}`)),
-            []
-          );
-          notes.forEach(note => {
-            Tone.Transport.scheduleRepeat(
-              () => violins.triggerAttack(note, '+1'),
-              Math.random() * 120 + 60,
-              30
-            );
-          });
-        },
-        volume: -35,
-      }
-    ).chain(violinReverb, reverb);
+    reversePiano.chain(delay1, delay2, destination);
 
-    const nodesToDispose = [
-      noise,
-      eq,
-      lfo,
-      delay1,
-      delay2,
-      reverb,
-      violinReverb,
-      violins,
-    ];
+    violinNotes.forEach(note => {
+      Tone.Transport.scheduleRepeat(
+        () => violins.triggerAttack(note, '+1'),
+        window.generativeMusic.rng() * 120 + 60,
+        `+${window.generativeMusic.rng() * 15 + 15}`
+      );
+    });
 
-    const pianoSamples = samples['vsco2-piano-mf'][preferredFormat];
-    return Promise.all(
-      Reflect.ownKeys(pianoSamples).map(
-        note =>
-          new Promise(resolve => {
-            const buffer = new Tone.Buffer(pianoSamples[note], () =>
-              resolve(buffer)
-            );
-          })
-      )
-    )
-      .then(buffers =>
-        new Tone.Sampler(
-          Reflect.ownKeys(pianoSamples).reduce((reverseConfig, note, i) => {
-            reverseConfig[note] = buffers[i];
-            reverseConfig[note].reverse = true;
-            return reverseConfig;
-          }, {})
-        ).chain(reverb)
-      )
-      .then(reversePiano => {
-        nodesToDispose.push(reversePiano);
-        const notes = Chord.notes('C', 'maj7').reduce(
-          (allNotes, pc) =>
-            allNotes.concat([3, 4, 5].map(octave => `${pc}${octave}`)),
-          []
-        );
-        const intervals = notes.map(() => Math.random() * 30 + 30);
-        const minInterval = Math.min(...intervals);
-        notes.forEach((note, i) => {
-          const intervalTime = intervals[i];
-          Tone.Transport.scheduleRepeat(
-            () => reversePiano.triggerAttack(note, '+1'),
-            intervalTime,
-            intervalTime - minInterval
-          );
-        });
-      })
-      .then(() => () => {
-        nodesToDispose.forEach(node => node.dispose());
-      });
-  });
+    const intervals = pianoNotes.map(() => window.generativeMusic.rng() * 30 + 30);
+    const minInterval = Math.min(...intervals);
+    pianoNotes.forEach((note, i) => {
+      const intervalTime = intervals[i];
+      Tone.Transport.scheduleRepeat(
+        () => reversePiano.triggerAttack(note, '+1'),
+        intervalTime,
+        intervalTime - minInterval
+      );
+    });
 
-export default makePiece;
+    return () => {
+      reversePiano.releaseAll(0);
+      violins.releaseAll(0);
+      [delay1, delay2].forEach(node => node.dispose());
+    };
+  };
+
+  const deactivate = () => {
+    [violins, reversePiano].forEach(node => node.dispose());
+  };
+
+  return [deactivate, schedule];
+};
+
+const GAIN_ADJUSTMENT = gainAdjustments['apoapsis'];
+
+export default wrapActivate(activate, { gain: GAIN_ADJUSTMENT });
+
