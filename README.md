@@ -1,45 +1,87 @@
 # pieces-alex-bainter
 
-A collection of generative music pieces for [generative.fm](https://generative.fm).
+A collection of generative music systems for [Generative.fm](https://generative.fm).
+
+The documentation here is incomplete but hopefully it can help you get started. Please see [Generative.fm Open-source Objectives](https://gist.github.com/metalex9/11923b7faa710215dc7ab39a0e056a65).
 
 ## Installation
 
-Each piece is available via npm under the `@generative-music` scope.
-For example, the piece "Observable Streams" can be installed like so:
+The generative systems are available as [npm] packages. You can either install every system in one package or as separate packages for each system.
+
+### Installing every system in one package
+
+See [@generative-music/pieces-alex-bainter](packages/pieces-alex-bainter/README.md#Installation).
+
+### Installing systems individually
+
+Each piece is available on [npm] as package in the `@generative-music` scope. For example, to install the system for "Zed", you would do:
 
 ```bash
-npm i @generative-music/piece-observable-streams
+npm install @generative-music/piece-zed
 ```
+
+In general, a system's package name is the same as its title, written in lower-kebab-case and prefixed with `@generative-music/piece-`. Slashes (/) in titles are replaced with dashes (-). You can confirm a system's package name by looking at the `name` property of its `package.json` file. For example, the `package.json` file for "Zed" is located at [packages/piece-zed/package.json](packages/piece-zed/package.json), where the `name` is specified as `"@generative-music/piece-zed"`.
+
+You will also need to install [Tone.js] if you haven't already (`npm install tone`).
 
 ## Usage
 
-> **IMPORTANT:** The pieces use audio files hosted on [samples.generative.fm](https://samples.generative.fm), which does not support requests from unrecognized origins.
+### As fast as possible
 
-The default export of every piece is a function which takes an object parameter and returns a promise which resolves with a cleanup function once the piece is ready.
+1. You need to have the necessary audio sample files hosted somewhere accessible to the systems. These samples can be found in the [@generative-music/samples-alex-bainter](https://github.com/generative-music/samples-alex-bainter) repository. For local development, follow the instructions for [building](https://github.com/generative-music/samples-alex-bainter#building) and [serving](https://github.com/generative-music/samples-alex-bainter#serving-locally-with-docker) the files.
 
-The object parameter passed to the exported function of a piece should have three properties:
+2. Install necessary dependencies from [npm]:
 
-* `audioContext`: An instantiated implementation of the Web Audio API [`AudioContext`](https://developer.mozilla.org/en-US/docs/Web/API/AudioContext) interface.
-* `destination`: An [`AudioNode`](https://developer.mozilla.org/en-US/docs/Web/API/AudioNode) to which the piece's own nodes will be connected.
-* `preferredFormat`: A string containing the audio format to use for any audio files. Currently accepted values are `ogg` and `mp3`.
-
-Currently, all pieces use [Tone.js](https://tonejs.github.io/) which is required to control a piece.
-
-```JavaScript
-import Tone from 'tone';
-import makePiece from '@generative-music/piece-observable-streams';
-
-// Detect ogg support, otherwise use mp3
-const preferredFormat = document.createElement('audio').canPlayType('audio/ogg') !== '' ? 'ogg' : 'mp3';
-
-makePiece({ audioContext: Tone.context, destination: Tone.Master, preferredFormat }).then(cleanUp => {
-  // Starting the piece
-  // Make sure you follow the Chrome Autoplay policy: https://developers.google.com/web/updates/2017/09/autoplay-policy-changes#webaudio
-  Tone.Transport.start();
-
-  // Stopping the piece
-  Tone.Transport.stop(); // stop Transport events
-  Tone.Transport.cancel(); // remove all Transport events
-  cleanUp(); // dispose of audio nodes created by the piece
-})
+```bash
+npm install @generative-music/web-library @generative-music/web-provider @generative-music/samples-alex-bainter
 ```
+
+3. Run the system:
+
+```javascript
+import activate from '@generative-music/piece-zed';
+import createLibrary from '@generative-music/web-library';
+import createProvider from '@generative-music/web-provider';
+import getSampleIndex from '@generative-music/samples-alex-bainter';
+import { Transport, Destination, context } from 'tone';
+
+const provider = createProvider();
+
+const sampleIndex = getSampleIndex({
+  format: 'wav', // also accepts 'mp3' and 'ogg'
+  host: 'http://localhost:6969', // host where sample files can be fetched from
+});
+
+const sampleLibrary = createLibrary({
+  sampleIndex,
+  provider,
+});
+
+
+// activate the system (load sample files and allocate memory)
+activate({
+  context,
+  sampleLibrary
+  destination: Destination, // connect the output of the system to Tone's Destination node
+}).then(([deactivate, schedule]) => {
+  const end = schedule(); // schedule a performance along Tone's Transport
+  Transport.start(); // begin playback
+
+  // stopping the system
+  Transport.stop(); // stop Tone's Transport
+  Transport.cancel(); // clear Tone's Transport
+  end(); // clear the performance
+
+  // releasing resources
+  deactivate();
+});
+```
+
+## 🍝 Regarding code quality (or lack thereof)
+
+Most of the systems within this repository were written during a period where I'd set an aggressive pace for myself to create new systems regularly and experiment. As a result, code quality suffered. Unfortunately, this means the code may be hard to understand, and I don't consider it to be a good example of how I typically build software. Someday, I'd love to improve these systems so they're easier for you to read.
+
+You've been warned!
+
+[npm]: https://www.npmjs.com/
+[tone.js]: https://tonejs.github.io/
