@@ -1,60 +1,81 @@
-import Tone from 'tone';
-import { Note } from 'tonal';
-import fetchSpecFile from '@generative-music/samples.generative.fm/browser-client';
+import * as Tone from 'tone';
+import { createSampler, wrapActivate } from '@generative-music/utilities';
+import { sampleNames } from '../otherness.gfm.manifest.json';
+import gainAdjustments from '../../../normalize/gain.json';
 
+const PITCH_CLASSES = [
+  'C',
+  'C#',
+  'Db',
+  'D',
+  'D#',
+  'Eb',
+  'E',
+  'F',
+  'F#',
+  'Gb',
+  'G',
+  'G#',
+  'Ab',
+  'A',
+  'A#',
+  'Bb',
+  'B',
+];
 const OCTAVES = [2, 3, 4];
 const notes = OCTAVES.reduce(
   (allNotes, octave) =>
-    allNotes.concat(Note.names().map(pitchClass => `${pitchClass}${octave}`)),
+    allNotes.concat(PITCH_CLASSES.map(pitchClass => `${pitchClass}${octave}`)),
   []
 );
 
 const playNote = (instrument, sineSynth, lastNoteMidi) => {
-  const newNotes = notes.filter(n => Note.midi(n) !== lastNoteMidi);
-  const note = newNotes[Math.floor(Math.random() * newNotes.length)];
+  const newNotes = notes.filter(n => Tone.Midi(n).toMidi() !== lastNoteMidi);
+  const note = newNotes[Math.floor(window.generativeMusic.rng() * newNotes.length)];
   instrument.triggerAttack(note, '+1.5');
-  const pitchClass = Note.pc(note);
+  const pitchClass = note.slice(0, -1);
   sineSynth.triggerAttackRelease(`${pitchClass}1`, 5, '+1.5');
   Tone.Transport.scheduleOnce(() => {
-    playNote(instrument, sineSynth, Note.midi(note));
-  }, `+${Math.random() * 10 + 10}`);
+    playNote(instrument, sineSynth, Tone.Midi(note).toMidi());
+  }, `+${window.generativeMusic.rng() * 10 + 10}`);
 };
 
-const getSampledInstrument = samplesByNote =>
-  new Promise(resolve => {
-    const instrument = new Tone.Sampler(samplesByNote, {
-      onload: () => resolve(instrument),
-    });
-  });
+const activate = async ({ sampleLibrary }) => {
+  const samples = await sampleLibrary.request(Tone.context, sampleNames);
+  const instrument = await createSampler(samples.otherness);
+  const volume = new Tone.Volume(-5);
+  instrument.connect(volume);
 
-const makePiece = ({ audioContext, destination, preferredFormat }) =>
-  fetchSpecFile()
-    .then(({ samples }) => {
-      if (Tone.context !== audioContext) {
-        Tone.setContext(audioContext);
-      }
-      return getSampledInstrument(samples.otherness[preferredFormat]);
-    })
-    .then(instrument => {
-      const volume = new Tone.Volume(-5).connect(destination);
-      const sineSynth = new Tone.MonoSynth({
-        oscillator: { type: 'sine' },
-        envelope: {
-          attack: 3,
-          release: 10,
-        },
-      }).connect(volume);
+  const schedule = ({ destination }) => {
+    volume.connect(destination);
+    const sineSynth = new Tone.MonoSynth({
+      oscillator: { type: 'sine' },
+      envelope: {
+        attack: 3,
+        release: 10,
+      },
+    }).connect(volume);
 
-      instrument.connect(volume);
+    sineSynth.volume.value = -25;
+    instrument.volume.value = -5;
 
-      sineSynth.volume.value = -25;
-      instrument.volume.value = -5;
+    playNote(instrument, sineSynth);
 
-      playNote(instrument, sineSynth);
+    return () => {
+      sineSynth.dispose();
+      instrument.releaseAll(0);
+    };
+  };
 
-      return () => {
-        [sineSynth, instrument, volume].forEach(node => node.dispose());
-      };
-    });
+  const deactivate = () => {
+    instrument.dispose();
+    volume.dispose();
+  };
 
-export default makePiece;
+  return [deactivate, schedule];
+};
+
+const GAIN_ADJUSTMENT = gainAdjustments['otherness'];
+
+export default wrapActivate(activate, { gain: GAIN_ADJUSTMENT });
+
