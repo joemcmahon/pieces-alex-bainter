@@ -30,7 +30,7 @@
     "tone": "^14.7.58"
   },
   "dependencies": {
-    "@babel/runtime": "^7.12.5",
+    "@babel/runtime": "^7.29.7",
     "@generative-music/utilities": "^5.2.0"
   },
   "unpkg": "dist/umd.min.js"
